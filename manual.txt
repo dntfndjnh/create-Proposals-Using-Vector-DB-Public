@@ -1,0 +1,5 @@
+python -m venv venv
+venv\Scripts\activate
+python -m pip install --upgrade pip
+pip install streamlit sentence-transformers faiss-cpu python-docx PyMuPDF scikit-learn keybert
+streamlit run app.py
