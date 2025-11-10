@@ -38,7 +38,7 @@ def read_document_paragraphs(file_path_or_file):
             paragraphs.extend([p.text.strip() for p in d.paragraphs if p.text.strip()])
     return paragraphs
 
-# --- 2️⃣ Streamlit 설정 ---
+# ---  Streamlit 설정 ---
 st.set_page_config(page_title="Document Search & Keyword System", layout="wide")
 st.title("문서 검색 및 키워드 추출 시스템. TEAM TechTree")
 st.info("문서를 업로드하거나 documents 폴더에 넣으면 자동으로 벡터화됩니다.")
@@ -52,7 +52,7 @@ if os.path.exists(css_file):
 status_message = st.empty()
 status_message.info("모델 로드 중... (잠시 기다려주세요)")
 
-# --- 3️⃣ Hugging Face LaBSE 모델 CPU 로드 ---
+# ---  Hugging Face LaBSE 모델 CPU 로드 ---
 model_name = "sentence-transformers/LaBSE"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 hf_model = AutoModel.from_pretrained(model_name)
@@ -191,3 +191,4 @@ with st.expander("문서 검색", expanded=True):
                     - 키워드: {', '.join(doc_keywords[idx])}
                 </div>
                 """, unsafe_allow_html=True)
+
