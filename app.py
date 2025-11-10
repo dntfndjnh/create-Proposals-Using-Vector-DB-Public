@@ -13,7 +13,7 @@ from keybert import KeyBERT
 import torch
 from transformers import AutoTokenizer, AutoModel
 
-# --- 1️⃣ 문서 읽기 함수 ---
+# ---  문서 읽기 함수 ---
 def read_document_paragraphs(file_path_or_file):
     paragraphs = []
     if hasattr(file_path_or_file, "read"):
@@ -48,7 +48,7 @@ def read_document_paragraphs(file_path_or_file):
                     paragraphs.append(p.text.strip())
     return paragraphs
 
-# --- 2️⃣ Streamlit 설정 ---
+# ---  Streamlit 설정 ---
 st.set_page_config(page_title="Document Search & Keyword System", layout="wide")
 st.title("문서 검색 및 키워드 추출 시스템. TEAM TechTree")
 st.info("문서를 업로드하거나 documents 폴더에 넣으면 자동으로 벡터화됩니다.")
@@ -56,7 +56,7 @@ st.info("문서를 업로드하거나 documents 폴더에 넣으면 자동으로
 status_message = st.empty()
 status_message.info("모델 로드 중... (잠시 기다려주세요)")
 
-# --- 3️⃣ Hugging Face LaBSE 모델 CPU 로드 ---
+# ---  Hugging Face LaBSE 모델 CPU 로드 ---
 model_name = "sentence-transformers/LaBSE"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 hf_model = AutoModel.from_pretrained(model_name)
@@ -79,11 +79,11 @@ stopwords_ko = ["은", "는", "이", "가", "의", "에", "을", "를", "와", "
 
 status_message.success("모델 로드 완료!")
 
-# --- 4️⃣ FAISS DB 경로 ---
+# ---  FAISS DB 경로 ---
 index_file = "vector_index.faiss"
 data_file = "doc_data.pkl"
 
-# --- 5️⃣ DB 로드 또는 새로 생성 ---
+# ---  DB 로드 또는 새로 생성 ---
 status_message.info("벡터 DB 준비 중...")
 embedding_dim = hf_model.config.hidden_size
 if os.path.exists(index_file) and os.path.exists(data_file):
@@ -100,7 +100,7 @@ else:
     doc_names, doc_paragraphs, doc_embeddings, doc_keywords = [], [], [], []
     status_message.success("새 벡터 DB 생성 완료!")
 
-# --- 6️⃣ 문서 처리 함수 ---
+# ---  문서 처리 함수 ---
 def process_file(file_path_or_file, file_name, progress_bar=None, progress_offset=0, total_paragraphs=1):
     paragraphs = read_document_paragraphs(file_path_or_file)
     for i, p in enumerate(paragraphs):
@@ -123,7 +123,7 @@ def process_file(file_path_or_file, file_name, progress_bar=None, progress_offse
             value = min((progress_offset + i + 1) / total_paragraphs, 1.0)
             progress_bar.progress(value)
 
-# --- 7️⃣ documents 폴더 처리 ---
+# ---  documents 폴더 처리 ---
 if not os.path.exists("./documents"):
     os.makedirs("./documents")
 
@@ -140,7 +140,7 @@ if doc_files:
     progress_bar.empty()
     status_message.success("documents 폴더 문서 벡터화 완료!")
 
-# --- 8️⃣ Streamlit 업로드 처리 ---
+# ---  Streamlit 업로드 처리 ---
 with st.expander("문서 업로드 및 벡터화", expanded=True):
     uploaded_files = st.file_uploader("문서를 선택하세요 (.pdf 또는 .docx)", accept_multiple_files=True)
     if uploaded_files:
@@ -172,7 +172,7 @@ with st.expander("문서 업로드 및 벡터화", expanded=True):
         progress_bar.empty()
         st.success("업로드된 문서 벡터화 및 키워드 저장 완료!")
 
-# --- 9️⃣ DB 저장 ---
+# ---  DB 저장 ---
 faiss.write_index(index, index_file)
 with open(data_file, "wb") as f:
     pickle.dump({
@@ -182,7 +182,7 @@ with open(data_file, "wb") as f:
         "keywords": doc_keywords
     }, f)
 
-# --- 🔟 검색 기능 ---
+# --- 검색 기능 ---
 with st.expander("문서 검색", expanded=True):
     query = st.text_input("검색어 입력")
     top_k = st.slider("상위 몇 개 결과를 보여드릴까요?", 1, 10, 5)
@@ -202,3 +202,4 @@ with st.expander("문서 검색", expanded=True):
                 st.markdown(f"**{rank+1}. {doc_file} - 문단 {para_idx}**")
                 st.markdown(f"- 유사도: {sim:.4f}, 거리: {distances[0][rank]:.4f}")
                 st.markdown(f"- 키워드: {', '.join(doc_keywords[idx])}")
+
