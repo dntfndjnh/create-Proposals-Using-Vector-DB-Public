@@ -1,0 +1,21 @@
+/* style.css */
+
+.result-box {
+    border: 1px solid #ddd;
+    border-radius: 12px;
+    padding: 12px;
+    margin: 10px 0;
+    background-color: #f9f9f9;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+    transition: all 0.2s ease-in-out;
+}
+
+.result-box:hover {
+    box-shadow: 4px 4px 12px rgba(0,0,0,0.2);
+    background-color: #f1f7ff;
+}
+
+.result-box b {
+    font-size: 1.1em;
+    color: #333;
+}
