@@ -1,5 +1,5 @@
 # 설치 필요:
-# pip install streamlit transformers sentencepiece faiss-cpu python-docx PyMuPDF scikit-learn keybert
+# pip install streamlit transformers sentencepiece faiss-cpu python-docx PyMuPDF scikit-learn keybert torch
 
 import os
 import fitz
@@ -17,75 +17,66 @@ from transformers import AutoTokenizer, AutoModel
 def read_document_paragraphs(file_path_or_file):
     paragraphs = []
     if hasattr(file_path_or_file, "read"):
-        # UploadedFile 객체 처리
         if file_path_or_file.name.endswith(".pdf"):
             doc = fitz.open(stream=file_path_or_file.read(), filetype="pdf")
             for page in doc:
                 text = page.get_text("text")
-                for p in text.split("\n"):
-                    if p.strip():
-                        paragraphs.append(p.strip())
+                paragraphs.extend([p.strip() for p in text.split("\n") if p.strip()])
         elif file_path_or_file.name.endswith(".docx"):
             docx_file = docx.Document(file_path_or_file)
-            for p in docx_file.paragraphs:
-                if p.text.strip():
-                    paragraphs.append(p.text.strip())
+            paragraphs.extend([p.text.strip() for p in docx_file.paragraphs if p.text.strip()])
     else:
-        # 로컬 경로 처리
         if file_path_or_file.endswith(".pdf"):
             doc = fitz.open(file_path_or_file)
             for page in doc:
                 text = page.get_text("text")
-                for p in text.split("\n"):
-                    if p.strip():
-                        paragraphs.append(p.strip())
+                paragraphs.extend([p.strip() for p in text.split("\n") if p.strip()])
         elif file_path_or_file.endswith(".docx"):
             if os.path.basename(file_path_or_file).startswith("~$"):
                 return []
             d = docx.Document(file_path_or_file)
-            for p in d.paragraphs:
-                if p.text.strip():
-                    paragraphs.append(p.text.strip())
+            paragraphs.extend([p.text.strip() for p in d.paragraphs if p.text.strip()])
     return paragraphs
 
-# ---  Streamlit 설정 ---
+# --- 2️⃣ Streamlit 설정 ---
 st.set_page_config(page_title="Document Search & Keyword System", layout="wide")
 st.title("문서 검색 및 키워드 추출 시스템. TEAM TechTree")
 st.info("문서를 업로드하거나 documents 폴더에 넣으면 자동으로 벡터화됩니다.")
 
+# --- CSS 적용 ---
+css_file = "style.css"
+if os.path.exists(css_file):
+    with open(css_file, "r", encoding="utf-8") as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
 status_message = st.empty()
 status_message.info("모델 로드 중... (잠시 기다려주세요)")
 
-# ---  Hugging Face LaBSE 모델 CPU 로드 ---
+# --- 3️⃣ Hugging Face LaBSE 모델 CPU 로드 ---
 model_name = "sentence-transformers/LaBSE"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 hf_model = AutoModel.from_pretrained(model_name)
 hf_model.eval()
 hf_model.to("cpu")
 
-# 문장 임베딩 생성 함수
 @torch.no_grad()
 def get_embedding(text):
     inputs = tokenizer(text, return_tensors="pt", truncation=True, padding=True)
     outputs = hf_model(**inputs)
-    # CLS 토큰 벡터 평균
     embeddings = outputs.last_hidden_state.mean(dim=1)
     return embeddings.squeeze().numpy()
 
-# KeyBERT 모델
-kw_model = KeyBERT(model=None)  # transformers 모델 직접 사용 예정
-
+# KeyBERT 모델 (stopwords는 한국어 제거용)
+kw_model = KeyBERT(model=None)
 stopwords_ko = ["은", "는", "이", "가", "의", "에", "을", "를", "와", "과", "도", "로", "으로"]
 
 status_message.success("모델 로드 완료!")
 
-# ---  FAISS DB 경로 ---
+# ---  FAISS DB 설정 ---
 index_file = "vector_index.faiss"
 data_file = "doc_data.pkl"
-
-# ---  DB 로드 또는 새로 생성 ---
-status_message.info("벡터 DB 준비 중...")
 embedding_dim = hf_model.config.hidden_size
+
 if os.path.exists(index_file) and os.path.exists(data_file):
     index = faiss.read_index(index_file)
     with open(data_file, "rb") as f:
@@ -135,12 +126,12 @@ if doc_files:
     paragraph_offset = 0
     for file_name in doc_files:
         file_path = os.path.join("./documents", file_name)
-        process_file(file_path, file_name, progress_bar=progress_bar, progress_offset=paragraph_offset, total_paragraphs=total_paragraphs)
+        process_file(file_path, file_name, progress_bar, paragraph_offset, total_paragraphs)
         paragraph_offset += len(read_document_paragraphs(file_path))
     progress_bar.empty()
     status_message.success("documents 폴더 문서 벡터화 완료!")
 
-# ---  Streamlit 업로드 처리 ---
+# ---  업로드 처리 ---
 with st.expander("문서 업로드 및 벡터화", expanded=True):
     uploaded_files = st.file_uploader("문서를 선택하세요 (.pdf 또는 .docx)", accept_multiple_files=True)
     if uploaded_files:
@@ -160,13 +151,7 @@ with st.expander("문서 업로드 및 벡터화", expanded=True):
 
         paragraph_offset = 0
         for file_name, temp_path in temp_paths:
-            process_file(
-                file_path_or_file=temp_path,
-                file_name=file_name,
-                progress_bar=progress_bar,
-                progress_offset=paragraph_offset,
-                total_paragraphs=total_paragraphs
-            )
+            process_file(temp_path, file_name, progress_bar, paragraph_offset, total_paragraphs)
             paragraph_offset += len(read_document_paragraphs(temp_path))
 
         progress_bar.empty()
@@ -182,7 +167,7 @@ with open(data_file, "wb") as f:
         "keywords": doc_keywords
     }, f)
 
-# --- 검색 기능 ---
+# ---  검색 기능 ---
 with st.expander("문서 검색", expanded=True):
     query = st.text_input("검색어 입력")
     top_k = st.slider("상위 몇 개 결과를 보여드릴까요?", 1, 10, 5)
@@ -198,8 +183,11 @@ with st.expander("문서 검색", expanded=True):
             for rank, idx in enumerate(indices[0]):
                 sim = cosine_similarity([query_emb[0]], [doc_embeddings[idx]])[0][0]
                 doc_file, para_idx = doc_paragraphs[idx]
-                st.markdown("---")
-                st.markdown(f"**{rank+1}. {doc_file} - 문단 {para_idx}**")
-                st.markdown(f"- 유사도: {sim:.4f}, 거리: {distances[0][rank]:.4f}")
-                st.markdown(f"- 키워드: {', '.join(doc_keywords[idx])}")
-
+                
+                st.markdown(f"""
+                <div class="result-box">
+                    <b>{rank+1}. {doc_file} - 문단 {para_idx}</b><br>
+                    - 유사도: {sim:.4f}, 거리: {distances[0][rank]:.4f}<br>
+                    - 키워드: {', '.join(doc_keywords[idx])}
+                </div>
+                """, unsafe_allow_html=True)
