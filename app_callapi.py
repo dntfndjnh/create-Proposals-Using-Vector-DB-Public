@@ -1,4 +1,4 @@
-# app.py (CPU forced KeyBERT; OpenAI v1 SDK 호환; 키워드 선택 상태 유지)
+# app.py (CPU forced KeyBERT; OpenAI v1 SDK 호환; 키워드 선택 상태 유지; Mermaid 실시간 렌더링 포함)
 
 import os
 import pickle
@@ -14,6 +14,7 @@ import torch
 from transformers import AutoTokenizer, AutoModel
 from io import BytesIO
 import openai
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Document Search & Auto Plan", layout="wide")
 st.title("문서 검색 · 키워드 · AI 기획서 생성 — TEAM TechTree")
@@ -235,7 +236,7 @@ with st.expander("문서 검색", expanded=True):
         st.markdown("**검색 키워드 선택**")
         st.session_state["kw_selection"] = st.multiselect(
             "기획서에 넣을 키워드 선택",
-            options=list(dict.fromkeys([kw for r in st.session_state["last_search_result"] for kw in r["keywords"]])),
+            options=list(dict.fromkeys([kw for r in st.session_state["last_search_result"] for kw in r["keywords"]])) ,
             default=st.session_state["kw_selection"]
         )
 
@@ -289,9 +290,22 @@ with st.expander("AI 자동 기획서 생성", expanded=True):
                 kws = [k.strip() for k in kw_input.split(",") if k.strip()]
                 plan, mermaid = generate_project_plan(kws, notes)
                 st.success("완료")
+                
+                # 계획서 텍스트
                 st.markdown(plan)
-                st.markdown(f"```mermaid\n{mermaid}\n```")
-
+                
+                # Mermaid 렌더링
+                components.html(f"""
+                <div class="mermaid">
+                {mermaid}
+                </div>
+                <script type="module">
+                import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+                mermaid.initialize({{ startOnLoad: true }});
+                </script>
+                """, height=500)
+                
+                # 다운로드 버튼
                 def create_docx_bytes(plan, mermaid):
                     doc = Document()
                     doc.add_heading("AI Project Plan", 0)
