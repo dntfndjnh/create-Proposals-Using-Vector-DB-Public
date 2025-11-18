@@ -1,4 +1,4 @@
-# app.py (fixed: CPU forced KeyBERT; OpenAI v1 SDK 호환)
+# app.py (CPU forced KeyBERT; OpenAI v1 SDK 호환; 키워드 선택 상태 유지)
 
 import os
 import pickle
@@ -192,6 +192,13 @@ if st.button("DB 저장"):
     save_db()
     st.success("DB 저장 완료")
 
+# ---- 세션 상태 초기화 ----
+if "kw_selection" not in st.session_state:
+    st.session_state["kw_selection"] = []
+
+if "last_search_result" not in st.session_state:
+    st.session_state["last_search_result"] = []
+
 # ---- 검색 ----
 with st.expander("문서 검색", expanded=True):
     query = st.text_input("검색어 입력")
@@ -205,19 +212,32 @@ with st.expander("문서 검색", expanded=True):
             dist, idxs = index.search(q_emb, k)
             st.subheader(f"검색 결과 ({k}개)")
             all_kw = []
+            results = []
             for rank, idx in enumerate(idxs[0]):
                 sim = cosine_similarity([q_emb[0]], [doc_embeddings[idx]])[0][0]
                 fn, pidx = doc_paragraphs[idx]
                 kws = doc_keywords[idx]
                 all_kw += kws
-                st.markdown(f"**{rank+1}. {fn} - 문단 {pidx}**  ")
+                results.append({
+                    "file": fn,
+                    "paragraph_idx": pidx,
+                    "similarity": sim,
+                    "keywords": kws
+                })
+                st.markdown(f"**{rank+1}. {fn} - 문단 {pidx}**")
                 st.markdown(f"유사도: {sim:.4f} | 키워드: {', '.join(kws)}")
-            if all_kw:
-                uniq = list(dict.fromkeys(all_kw))
-                st.markdown("**검색 키워드 선택**")
-                kw_selection = st.multiselect("기획서에 넣을 키워드 선택", uniq, default=uniq[:6])
-            else:
-                kw_selection = []
+
+            st.session_state["last_search_result"] = results
+            st.session_state["kw_selection"] = list(dict.fromkeys(all_kw))[:6]  # 기본 선택 6개
+
+    # ---- 키워드 선택 UI ----
+    if st.session_state["last_search_result"]:
+        st.markdown("**검색 키워드 선택**")
+        st.session_state["kw_selection"] = st.multiselect(
+            "기획서에 넣을 키워드 선택",
+            options=list(dict.fromkeys([kw for r in st.session_state["last_search_result"] for kw in r["keywords"]])),
+            default=st.session_state["kw_selection"]
+        )
 
 # ---- 기획서 생성 ----
 def generate_project_plan(keywords, notes=""):
@@ -256,7 +276,7 @@ def generate_project_plan(keywords, notes=""):
     return plan, mermaid
 
 with st.expander("AI 자동 기획서 생성", expanded=True):
-    default_text = ", ".join(kw_selection) if 'kw_selection' in locals() and kw_selection else ""
+    default_text = ", ".join(st.session_state.get("kw_selection", []))
     kw_input = st.text_area("사용할 키워드", value=default_text)
     notes = st.text_area("추가 요청")
     if st.button("기획서 생성"):
