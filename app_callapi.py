@@ -1,4 +1,4 @@
-# app.py (fixed: no secrets required; UI warning only)
+# app.py (fixed: CPU forced KeyBERT; OpenAI v1 SDK 호환)
 
 import os
 import pickle
@@ -12,26 +12,27 @@ from sklearn.metrics.pairwise import cosine_similarity
 from keybert import KeyBERT
 import torch
 from transformers import AutoTokenizer, AutoModel
-import openai
 from io import BytesIO
+import openai
 
 st.set_page_config(page_title="Document Search & Auto Plan", layout="wide")
 st.title("문서 검색 · 키워드 · AI 기획서 생성 — TEAM TechTree")
 st.info("문서를 업로드하거나 ./documents 폴더에 넣어두면 자동 벡터화됩니다.")
 
-# ---- API KEY 처리(필수 아님) ----
-openai_key = None
+# ---- API KEY 처리 ----
+openai_key = ""
 try:
     openai_key = st.secrets.get("OPENAI_API_KEY", "")
 except Exception:
-    openai_key = ""
-
+    pass
 if not openai_key:
     openai_key = os.environ.get("OPENAI_API_KEY", "")
 
 if not openai_key:
     st.warning("⚠️ OpenAI API 키가 설정되어 있지 않습니다. 기획서 생성 기능은 비활성화됩니다.")
-openai.api_key = openai_key
+else:
+    from openai import OpenAI
+    client = OpenAI(api_key=openai_key)
 
 # ---- CSS ----
 css_file = "style.css"
@@ -42,7 +43,7 @@ if os.path.exists(css_file):
 status_message = st.empty()
 status_message.info("모델 로드 중...")
 
-# ---- LaBSE ----
+# ---- LaBSE 임베딩 모델 ----
 model_name = "sentence-transformers/LaBSE"
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 hf_model = AutoModel.from_pretrained(model_name)
@@ -60,9 +61,11 @@ def get_embedding(text: str):
 
 status_message.success("임베딩 모델 로드 완료")
 
-# ---- KeyBERT ----
+# ---- KeyBERT (CPU 강제 설정) ----
+torch.set_default_device("cpu")
 stopwords_ko = ["은", "는", "이", "가", "의", "에", "을", "를", "와", "과", "도", "로", "으로"]
-kw_model = KeyBERT(model=None)
+kw_model = KeyBERT(model="all-mpnet-base-v2")
+kw_model.model.embedding_model.to("cpu")
 
 # ---- FAISS DB ----
 index_file = "vector_index.faiss"
@@ -129,8 +132,9 @@ def process_file(file_path_or_file, file_name, pb=None, offset=0, total=1):
         doc_paragraphs.append((file_name, i))
         doc_embeddings.append(emb)
         try:
-            kw = kw_model.extract_keywords(p, keyphrase_ngram_range=(1, 2), stop_words=stopwords_ko, top_n=8)
-            doc_keywords.append([k for k, s in kw])
+            kw = kw_model.extract_keywords(p, keyphrase_ngram_range=(1, 2),
+                                          stop_words=stopwords_ko, top_n=8)
+            doc_keywords.append([k for k, _ in kw])
         except Exception:
             doc_keywords.append(p.split()[:8])
         if pb:
@@ -208,7 +212,6 @@ with st.expander("문서 검색", expanded=True):
                 all_kw += kws
                 st.markdown(f"**{rank+1}. {fn} - 문단 {pidx}**  ")
                 st.markdown(f"유사도: {sim:.4f} | 키워드: {', '.join(kws)}")
-
             if all_kw:
                 uniq = list(dict.fromkeys(all_kw))
                 st.markdown("**검색 키워드 선택**")
@@ -218,9 +221,8 @@ with st.expander("문서 검색", expanded=True):
 
 # ---- 기획서 생성 ----
 def generate_project_plan(keywords, notes=""):
-    if not openai.api_key:
+    if not openai_key:
         raise RuntimeError("API 키 없음")
-
     kw = ", ".join(keywords)
     prompt = f"""
 당신은 소프트웨어 기획 전문가입니다. 아래 키워드 기반으로 '문서 검색 및 키워드 추출 시스템' 기획서를 작성하세요.
@@ -237,22 +239,20 @@ def generate_project_plan(keywords, notes=""):
 
 [MERMAID] flowchart 코드 1개 포함
 """
-
-    res = openai.ChatCompletion.create(
+    res = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.2,
         max_tokens=1200
     )
-    text = res["choices"][0]["message"]["content"]
-
+    text = res.choices[0].message.content
     if "[MERMAID]" in text:
-        plan = text.split("[MERMAID]")[0].replace("[PLAN]", "").strip()
-        mermaid = text.split("[MERMAID]")[1].strip()
+        plan, mermaid = text.split("[MERMAID]")
+        plan = plan.replace("[PLAN]", "").strip()
+        mermaid = mermaid.strip()
     else:
         plan = text
-        mermaid = "flowchart LR\n A[Upload] --> B[Embedding] --> C[FAISS] --> D[Search] --> E[Plan]"
-
+        mermaid = "flowchart LR\nA[Upload] --> B[Embedding] --> C[FAISS] --> D[Search] --> E[Plan]"
     return plan, mermaid
 
 with st.expander("AI 자동 기획서 생성", expanded=True):
@@ -260,7 +260,7 @@ with st.expander("AI 자동 기획서 생성", expanded=True):
     kw_input = st.text_area("사용할 키워드", value=default_text)
     notes = st.text_area("추가 요청")
     if st.button("기획서 생성"):
-        if not openai.api_key:
+        if not openai_key:
             st.error("API 키가 없어 기능을 사용할 수 없습니다.")
         elif not kw_input.strip():
             st.warning("키워드를 입력하세요.")
@@ -270,7 +270,6 @@ with st.expander("AI 자동 기획서 생성", expanded=True):
                 plan, mermaid = generate_project_plan(kws, notes)
                 st.success("완료")
                 st.markdown(plan)
-                st.code(mermaid, language="markdown")
                 st.markdown(f"```mermaid\n{mermaid}\n```")
 
                 def create_docx_bytes(plan, mermaid):
@@ -293,9 +292,10 @@ with st.expander("AI 자동 기획서 생성", expanded=True):
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 )
                 st.download_button(
-                    "Mermaid(.mmd) 다운로드", data=mermaid, file_name="diagram.mmd", mime="text/plain"
+                    "Mermaid(.mmd) 다운로드",
+                    data=mermaid,
+                    file_name="diagram.mmd",
+                    mime="text/plain"
                 )
 
 st.caption("DB 저장을 눌러 벡터 DB를 보존하세요.")
-
-# 아래에 전체 수정된 Streamlit 코드가 들어갈 예정입니다. 원하는 수정 내용을 말씀해주시면 반영하여 완성본을 넣어드릴게요!
