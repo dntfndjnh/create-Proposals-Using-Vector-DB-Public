@@ -1,4 +1,4 @@
-# app.py (CPU forced KeyBERT; OpenAI v1 SDK 호환; 키워드 선택 상태 유지; Mermaid 실시간 렌더링 포함)
+# app.py (CPU 강제 KeyBERT; OpenAI v1 SDK 호환; 키워드 선택 상태 유지; Mermaid 실시간 렌더링 포함)
 
 import os
 import pickle
@@ -229,14 +229,14 @@ with st.expander("문서 검색", expanded=True):
                 st.markdown(f"유사도: {sim:.4f} | 키워드: {', '.join(kws)}")
 
             st.session_state["last_search_result"] = results
-            st.session_state["kw_selection"] = list(dict.fromkeys(all_kw))[:6]  # 기본 선택 6개
+            st.session_state["kw_selection"] = list(dict.fromkeys(all_kw))[:6]
 
     # ---- 키워드 선택 UI ----
     if st.session_state["last_search_result"]:
         st.markdown("**검색 키워드 선택**")
         st.session_state["kw_selection"] = st.multiselect(
             "기획서에 넣을 키워드 선택",
-            options=list(dict.fromkeys([kw for r in st.session_state["last_search_result"] for kw in r["keywords"]])) ,
+            options=list(dict.fromkeys([kw for r in st.session_state["last_search_result"] for kw in r["keywords"]])),
             default=st.session_state["kw_selection"]
         )
 
@@ -273,7 +273,7 @@ def generate_project_plan(keywords, notes=""):
         mermaid = mermaid.strip()
     else:
         plan = text
-        mermaid = "flowchart LR\nA[Upload] --> B[Embedding] --> C[FAISS] --> D[Search] --> E[Plan]"
+        mermaid = None
     return plan, mermaid
 
 with st.expander("AI 자동 기획서 생성", expanded=True):
@@ -294,26 +294,28 @@ with st.expander("AI 자동 기획서 생성", expanded=True):
                 # 계획서 텍스트
                 st.markdown(plan)
                 
-                # Mermaid 렌더링
-                components.html(f"""
-                <div class="mermaid">
-                {mermaid}
-                </div>
-                <script type="module">
-                import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-                mermaid.initialize({{ startOnLoad: true }});
-                </script>
-                """, height=500)
+                # Mermaid 렌더링 (있으면만)
+                if mermaid:
+                    components.html(f"""
+                    <div class="mermaid">
+                    {mermaid}
+                    </div>
+                    <script type="module">
+                    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+                    mermaid.initialize({{ startOnLoad: true }});
+                    </script>
+                    """, height=500)
                 
-                # 다운로드 버튼
-                def create_docx_bytes(plan, mermaid):
+                # DOCX 다운로드 (무조건)
+                def create_docx_bytes(plan, mermaid_code=None):
                     doc = Document()
                     doc.add_heading("AI Project Plan", 0)
                     for line in plan.split("\n"):
                         doc.add_paragraph(line)
-                    doc.add_heading("Mermaid Code", 1)
-                    for line in mermaid.split("\n"):
-                        doc.add_paragraph(line)
+                    if mermaid_code:
+                        doc.add_heading("Mermaid Code", 1)
+                        for line in mermaid_code.split("\n"):
+                            doc.add_paragraph(line)
                     bio = BytesIO()
                     doc.save(bio)
                     bio.seek(0)
@@ -325,11 +327,14 @@ with st.expander("AI 자동 기획서 생성", expanded=True):
                     file_name="project_plan.docx",
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 )
-                st.download_button(
-                    "Mermaid(.mmd) 다운로드",
-                    data=mermaid,
-                    file_name="diagram.mmd",
-                    mime="text/plain"
-                )
+                
+                # Mermaid(.mmd) 다운로드 (있으면만)
+                if mermaid:
+                    st.download_button(
+                        "Mermaid(.mmd) 다운로드",
+                        data=mermaid,
+                        file_name="diagram.mmd",
+                        mime="text/plain"
+                    )
 
 st.caption("DB 저장을 눌러 벡터 DB를 보존하세요.")
